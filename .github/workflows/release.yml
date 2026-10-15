@@ -1,0 +1,39 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+      - name: Build universal app
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then export VERSION="${RELEASE_TAG#v}"; fi
+          bash scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ze-coleta-universal
+          path: |
+            build/Ze-Coleta-*-universal.zip
+            build/Ze-Coleta-*-universal.zip.sha256
+      - name: Attach preview artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --draft --prerelease --title "Zé Coleta $RELEASE_TAG" --notes 'Preview build. Not notarized; use the source Homebrew formula for a local build.'
+          fi
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          gh release upload "$RELEASE_TAG" build/Ze-Coleta-*-universal.zip build/Ze-Coleta-*-universal.zip.sha256
