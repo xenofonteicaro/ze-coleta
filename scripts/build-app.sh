@@ -15,8 +15,10 @@ case "$architecture" in
   arm64|x86_64) arch_args=(--arch "$architecture") ;;
   *) echo "COLETA_ARCHS must be native, universal, arm64 or x86_64." >&2; exit 64 ;;
 esac
-swift build --configuration release --product ZeColeta --jobs 2 "${arch_args[@]}"
-binary_directory="$(swift build --configuration release --show-bin-path "${arch_args[@]}")"
+# Extra SwiftPM arguments remain an argv array. Homebrew passes --disable-sandbox
+# for SwiftPM's nested manifest sandbox; Homebrew's outer sandbox stays active.
+swift build --configuration release --product ZeColeta --jobs 2 "${arch_args[@]}" "$@"
+binary_directory="$(swift build --configuration release --show-bin-path "${arch_args[@]}" "$@")"
 mkdir -p "$project_root/build"
 staging="$(mktemp -d "$project_root/build/stage.XXXXXX")"
 app="$staging/Zé Coleta.app"

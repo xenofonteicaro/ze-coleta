@@ -1,6 +1,8 @@
-import AppKit
+import CoreGraphics
 import Foundation
+import ImageIO
 
+// Render original vector initials offscreen, without AppKit or a WindowServer.
 guard CommandLine.arguments.count == 2 else { exit(64) }
 let directory = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -12,24 +14,29 @@ for (name, pixels) in [
     ("icon_512x512.png", 512), ("icon_512x512@2x.png", 1024),
 ] {
     let edge = CGFloat(pixels)
-    guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
-        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-        let context = NSGraphicsContext(bitmapImageRep: bitmap) else { exit(1) }
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = context
-    NSColor.clear.setFill()
-    NSRect(x: 0, y: 0, width: edge, height: edge).fill()
-    NSColor(srgbRed: 0.078, green: 0.478, blue: 0.384, alpha: 1).setFill()
-    NSBezierPath(roundedRect: NSRect(x: edge * 0.08, y: edge * 0.08, width: edge * 0.84, height: edge * 0.84),
-                 xRadius: edge * 0.2, yRadius: edge * 0.2).fill()
-    let text = NSAttributedString(string: "ZC", attributes: [
-        .font: NSFont.systemFont(ofSize: edge * 0.34, weight: .semibold), .foregroundColor: NSColor.white,
-        .kern: -edge * 0.025,
-    ])
-    let size = text.size()
-    text.draw(at: NSPoint(x: (edge - size.width) / 2, y: (edge - size.height) / 2))
-    NSGraphicsContext.restoreGraphicsState()
-    guard let data = bitmap.representation(using: .png, properties: [:]) else { exit(1) }
-    try data.write(to: directory.appendingPathComponent(name), options: .atomic)
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(data: nil, width: pixels, height: pixels,
+                                 bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { exit(1) }
+    context.setFillColor(CGColor(red: 0.078, green: 0.478, blue: 0.384, alpha: 1))
+    let square = CGRect(x: edge * 0.08, y: edge * 0.08, width: edge * 0.84, height: edge * 0.84)
+    context.addPath(CGPath(roundedRect: square, cornerWidth: edge * 0.2, cornerHeight: edge * 0.2, transform: nil))
+    context.fillPath()
+    context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+    context.setLineWidth(edge * 0.055)
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+    context.move(to: CGPoint(x: edge * 0.265, y: edge * 0.65))
+    context.addLine(to: CGPoint(x: edge * 0.465, y: edge * 0.65))
+    context.addLine(to: CGPoint(x: edge * 0.265, y: edge * 0.35))
+    context.addLine(to: CGPoint(x: edge * 0.465, y: edge * 0.35))
+    context.strokePath()
+    context.addArc(center: CGPoint(x: edge * 0.665, y: edge * 0.50), radius: edge * 0.155,
+                   startAngle: .pi / 4, endAngle: 7 * .pi / 4, clockwise: false)
+    context.strokePath()
+    guard let image = context.makeImage(),
+          let destination = CGImageDestinationCreateWithURL(directory.appendingPathComponent(name) as CFURL,
+                                                            "public.png" as CFString, 1, nil) else { exit(1) }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { exit(1) }
 }

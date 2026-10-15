@@ -26,7 +26,8 @@ class ZeColeta < Formula
   def install
     ENV["COLETA_ARCHS"] = "native"
     ENV["VERSION"] = version.to_s
-    system "bash", "scripts/build-app.sh"
+    # Match Homebrew's macOS std_swift_args inside the outer build sandbox.
+    system "bash", "scripts/build-app.sh", "--disable-sandbox"
     prefix.install "build/Zé Coleta.app"
     (bin/"ze-coleta").write <<~SH
       #!/bin/bash
@@ -36,6 +37,7 @@ class ZeColeta < Formula
       fi
       exec /usr/bin/open "#{prefix}/Zé Coleta.app"
     SH
+    (bin/"ze-coleta").chmod 0755
   end
 
   def caveats

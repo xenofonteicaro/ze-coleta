@@ -17,10 +17,10 @@ cask "ze-coleta" do
 
   url "https://github.com/xenofonteicaro/ze-coleta/releases/download/v#{version}/Ze-Coleta-#{version}-universal.zip"
   name "Zé Coleta"
-  desc "Local macOS cleanup and application uninstaller"
+  desc "Local cleanup and application uninstaller"
   homepage "https://github.com/xenofonteicaro/ze-coleta"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Zé Coleta.app"
 end
