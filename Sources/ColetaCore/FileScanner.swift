@@ -16,7 +16,7 @@ public struct FileScanner: Sendable {
 
 private struct AppRecord {
     let snapshot: FileSnapshot
-    let identifier: String?
+    let identifier: BundleIdentifier?
 }
 
 private struct DirectoryVisit: Hashable {
@@ -168,7 +168,7 @@ private struct ScanState: LogicalMeasurementContext {
     mutating func measurementChild(_ url: URL) throws -> FileSnapshot? { try examine(url) }
 
     mutating func add(_ snapshot: FileSnapshot, root: FileSnapshot, category: ScanCategory,
-                      bytes: Int64, detail: String, identifier: String? = nil, association: AppAssociation? = nil) {
+                      bytes: Int64, detail: String, identifier: BundleIdentifier? = nil, association: AppAssociation? = nil) {
         guard candidatePaths.insert(snapshot.url.path).inserted else { return }
         do {
             var authorization = try PathPolicy.authorization(for: snapshot, root: root)
@@ -244,7 +244,7 @@ private struct ScanState: LogicalMeasurementContext {
                 return
             }
             let identifier = try state.bundleIdentifier(child)
-            if identifier == nil { state.applicationInventoryComplete = false }
+            if identifier?.comparisonKey == nil { state.applicationInventoryComplete = false }
             // Track all discovered identifiers, even protected apps, to avoid ambiguous relationships.
             state.applications.append(AppRecord(snapshot: child, identifier: identifier))
             guard !PathPolicy.isProtectedApp(child.url, bundleIdentifier: identifier) else {
@@ -262,7 +262,7 @@ private struct ScanState: LogicalMeasurementContext {
         applicationInventoryComplete = applicationInventoryComplete && inventoryComplete
     }
 
-    mutating func bundleIdentifier(_ app: FileSnapshot) throws -> String? {
+    mutating func bundleIdentifier(_ app: FileSnapshot) throws -> BundleIdentifier? {
         let url = app.url.appendingPathComponent("Contents/Info.plist")
         do {
             guard let info = try examine(url) else { return nil }
@@ -272,11 +272,15 @@ private struct ScanState: LogicalMeasurementContext {
             }
             let data = try SafeFilesystem.readSmallFile(info)
             guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-                  let identifier = plist["CFBundleIdentifier"] as? String, !identifier.isEmpty else {
+                  let identifier = plist["CFBundleIdentifier"] as? String else {
                 issue("Bundle ID ausente ou inválido: \(url.path).")
                 return nil
             }
-            return identifier
+            let parsed = BundleIdentifier(rawValue: identifier)
+            if parsed.comparisonKey == nil {
+                issue("Bundle ID com alfabeto inválido; valor de origem preservado: \(identifier) em \(app.url.path).")
+            }
+            return parsed
         } catch is CancellationError { throw CancellationError() }
         catch { issue("Bundle ID desconhecido em \(app.url.path): \(error.localizedDescription)"); return nil }
     }
@@ -286,18 +290,16 @@ private struct ScanState: LogicalMeasurementContext {
             issue("Arquivos relacionados omitidos: o inventário de bundle IDs está incompleto; não é possível confirmar a exclusividade.")
             return
         }
-        let counts = Dictionary(grouping: applications.compactMap { app in app.identifier.map { ($0, app) } }, by: { $0.0 })
+        let counts = Dictionary(grouping: applications.compactMap { app in
+            app.identifier?.comparisonKey.map { ($0, app) }
+        }, by: { $0.0 })
         for app in applications {
             try Task.checkCancellation()
             guard !entryLimitReached else { break }
-            guard let identifier = app.identifier, !PathPolicy.isProtectedApp(app.snapshot.url, bundleIdentifier: identifier) else { continue }
-            guard counts[identifier]?.count == 1 else {
-                issue("Arquivos relacionados omitidos: mais de um aplicativo instalado usa \(identifier).")
-                continue
-            }
-            guard identifier != ".", identifier != "..", !identifier.contains("/"), !identifier.contains("\\"),
-                  !identifier.contains("\0") else {
-                issue("Bundle ID não pode formar um nome local seguro: \(app.snapshot.url.path).")
+            guard let identifier = app.identifier, let key = identifier.comparisonKey,
+                  !PathPolicy.isProtectedApp(app.snapshot.url, bundleIdentifier: identifier) else { continue }
+            guard counts[key]?.count == 1 else {
+                issue("Arquivos relacionados omitidos: mais de um aplicativo instalado usa \(identifier.rawValue) (comparação conservadora sem distinguir maiúsculas e minúsculas).")
                 continue
             }
             guard let infoProof = appInfoProofs[app.snapshot.url.path] else {
@@ -306,8 +308,8 @@ private struct ScanState: LogicalMeasurementContext {
             }
             let association = AppAssociation(ownerAppURL: app.snapshot.url, bundleIdentifier: identifier, infoProof: infoProof)
             let candidates = [
-                ("Library/Caches", identifier), ("Library/Logs", identifier),
-                ("Library/Preferences", identifier + ".plist")
+                ("Library/Caches", identifier.rawValue), ("Library/Logs", identifier.rawValue),
+                ("Library/Preferences", identifier.rawValue + ".plist")
             ]
             for (relativeRoot, name) in candidates {
                 guard !entryLimitReached else { break }

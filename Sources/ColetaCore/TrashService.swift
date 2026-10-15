@@ -104,24 +104,27 @@ public struct TrashService: Sendable {
             }
         }
         if item.category == .caches || item.category == .logs {
-            if !NSRunningApplication.runningApplications(withBundleIdentifier: item.name).isEmpty {
+            if isRunning(bundleIdentifier: BundleIdentifier(rawValue: item.name), appURL: nil) {
                 throw FilesystemFailure.rejected("Feche o aplicativo que usa este cache ou log antes de movê-lo: \(item.name).")
             }
         }
         if item.ownerAppURL != nil || item.category == .applications || item.category == .appRelated {
             let appURL = item.ownerAppURL ?? item.url
-            if PathPolicy.isProtectedApp(appURL, bundleIdentifier: item.bundleIdentifier) {
+            if PathPolicy.isProtectedApp(appURL, bundleIdentifier: item.bundleIdentity) {
                 throw FilesystemFailure.rejected("Aplicativo Apple ou o próprio Zé Coleta protegido: \(appURL.path)")
             }
-            let running: Bool
-            if let identifier = item.bundleIdentifier {
-                running = !NSRunningApplication.runningApplications(withBundleIdentifier: identifier).isEmpty
-            } else {
-                running = NSWorkspace.shared.runningApplications.contains {
-                    $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
-                }
+            if isRunning(bundleIdentifier: item.bundleIdentity, appURL: appURL) {
+                throw FilesystemFailure.rejected("Feche o aplicativo antes de mover seus arquivos: \(appURL.lastPathComponent).")
             }
-            if running { throw FilesystemFailure.rejected("Feche o aplicativo antes de mover seus arquivos: \(appURL.lastPathComponent).") }
+        }
+    }
+
+    private static func isRunning(bundleIdentifier: BundleIdentifier?, appURL: URL?) -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            if let key = bundleIdentifier?.comparisonKey,
+               let runningID = app.bundleIdentifier,
+               BundleIdentifier(rawValue: runningID).comparisonKey == key { return true }
+            return appURL != nil && app.bundleURL?.standardizedFileURL == appURL?.standardizedFileURL
         }
     }
 }

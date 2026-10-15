@@ -37,13 +37,14 @@ public struct ScanItem: Identifiable, Hashable, Sendable {
     public let bytes: Int64
     public let detail: String
     public let ownerAppURL: URL?
-    public let bundleIdentifier: String?
+    public var bundleIdentifier: String? { bundleIdentity?.rawValue }
+    let bundleIdentity: BundleIdentifier?
 
     // Only the scanner can mint a deletion authorization. Display fields are not authority.
     let authorization: ItemAuthorization
 
     init(id: String = UUID().uuidString, url: URL, category: ScanCategory, bytes: Int64, detail: String,
-         ownerAppURL: URL? = nil, bundleIdentifier: String? = nil,
+         ownerAppURL: URL? = nil, bundleIdentifier: BundleIdentifier? = nil,
          authorization: ItemAuthorization) {
         self.id = id
         self.url = url
@@ -51,7 +52,7 @@ public struct ScanItem: Identifiable, Hashable, Sendable {
         self.bytes = bytes
         self.detail = detail
         self.ownerAppURL = ownerAppURL
-        self.bundleIdentifier = bundleIdentifier
+        self.bundleIdentity = bundleIdentifier
         self.authorization = authorization
     }
 
@@ -67,11 +68,11 @@ public struct ScanItem: Identifiable, Hashable, Sendable {
 
 struct AppAssociation {
     let ownerAppURL: URL
-    let bundleIdentifier: String
+    let bundleIdentifier: BundleIdentifier
     let infoProof: FileProof
 
     var detail: String {
-        "Relação inferida pelo nome exato do bundle ID \(bundleIdentifier); confirme e selecione separadamente."
+        "Relação inferida pelo nome exato do bundle ID \(bundleIdentifier.rawValue); confirme e selecione separadamente."
     }
 }
 

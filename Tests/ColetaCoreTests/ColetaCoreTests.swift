@@ -404,6 +404,39 @@ struct ColetaCoreTests {
         #expect(report.issues.contains { $0.contains("mais de um") })
     }
 
+    @Test func caseVariantBundleIDsPreserveSourceSpellingAndSuppressAllAmbiguousAssociations() throws {
+        let fixture = try Fixture(); defer { fixture.clean() }
+        let upperID = "org.example.CaseProbe"
+        let lowerID = "org.example.caseprobe"
+        try fixture.app("Applications/Upper.app", identifier: upperID)
+        try fixture.app("Applications/Lower.app", identifier: lowerID)
+        let home = try fixture.directory("home")
+        try fixture.file("home/Library/Preferences/\(upperID).plist", bytes: 7)
+        let cache = try fixture.file("home/Library/Caches/\(upperID)/data", bytes: 20).deletingLastPathComponent()
+        let appRoot = ScanRoot(url: fixture.root.appendingPathComponent("Applications"), category: .applications)
+        let scanner = FileScanner(homeDirectory: home)
+        for roots in [[appRoot], [.init(url: cache.deletingLastPathComponent(), category: .caches), appRoot]] {
+            let report = try scanner.scan(ScanRequest(roots: roots))
+            #expect(!report.isComplete)
+            #expect(Set(report.items.filter { $0.category == .applications }.compactMap(\.bundleIdentifier)) == Set([upperID, lowerID]))
+            #expect(report.items.allSatisfy { $0.ownerAppURL == nil && $0.category != .appRelated })
+            #expect(Set(report.items.map { $0.authorization.leaf }).count == report.items.count)
+            #expect(report.issues.contains { $0.contains("comparação conservadora") })
+        }
+    }
+
+    @Test func invalidBundleIDAlphabetPreservesSourceWithoutAdmittingRelatedPaths() throws {
+        let fixture = try Fixture(); defer { fixture.clean() }
+        let rawID = "org.example.bad/escape"
+        let app = try fixture.app("Applications/Invalid.app", identifier: rawID)
+        let home = try fixture.directory("home")
+        try fixture.file("home/Library/Caches/\(rawID)/data", bytes: 20)
+        let report = try FileScanner(homeDirectory: home).scan(ScanRequest(roots: [.init(url: app.deletingLastPathComponent(), category: .applications)]))
+        #expect(report.items.first?.bundleIdentifier == rawID)
+        #expect(report.items.allSatisfy { $0.ownerAppURL == nil && $0.category == .applications })
+        #expect(report.issues.contains { $0.contains("alfabeto inválido") && $0.contains(rawID) })
+    }
+
     @Test func partialApplicationInventoryCannotAuthorizeRelatedFiles() throws {
         let fixture = try Fixture(); defer { fixture.clean() }
         try fixture.app("Applications/One.app", identifier: "org.example.one")
@@ -439,6 +472,8 @@ struct ColetaCoreTests {
         let fixture = try Fixture(); defer { fixture.clean() }
         try fixture.app("Applications/Self.app", identifier: PathPolicy.ownBundleIdentifier)
         try fixture.app("Applications/Apple.app", identifier: "com.apple.example")
+        try fixture.app("Applications/UpperSelf.app", identifier: PathPolicy.ownBundleIdentifier.uppercased())
+        try fixture.app("Applications/UpperApple.app", identifier: "COM.APPLE.example")
         let report = try FileScanner(homeDirectory: fixture.root).scan(ScanRequest(roots: [.init(url: fixture.root.appendingPathComponent("Applications"), category: .applications)]))
         #expect(report.items.isEmpty)
         let system = try FileScanner().scan(ScanRequest(roots: [.init(url: URL(fileURLWithPath: "/System"), category: .caches)]))

@@ -197,8 +197,9 @@ enum PathPolicy {
         exclusion(snapshot.url) ?? (snapshot.isDataless ? "placeholder sem conteúdo local" : nil)
     }
 
-    static func isProtectedApp(_ url: URL, bundleIdentifier: String?) -> Bool {
-        bundleIdentifier == ownBundleIdentifier || bundleIdentifier?.hasPrefix("com.apple.") == true ||
+    static func isProtectedApp(_ url: URL, bundleIdentifier: BundleIdentifier?) -> Bool {
+        let key = bundleIdentifier?.comparisonKey
+        return key == ownBundleIdentifier || key?.hasPrefix("com.apple.") == true ||
             url.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL
     }
 
