@@ -1,0 +1,31 @@
+name: macOS checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          swift --version
+          uname -m
+      - name: Test filesystem boundaries
+        run: swift test
+      - name: Build packaged application
+        run: bash scripts/build-app.sh
+      - name: Verify both architectures
+        run: |
+          architectures="$(lipo -archs 'build/Zé Coleta.app/Contents/MacOS/ZeColeta')"
+          [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ze-coleta-preview
+          path: build/Ze-Coleta-*.zip
